@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:open_settings/open_settings.dart';
 import 'package:rerac_113/screens/loginPage.dart';
+import 'package:rerac_113/widgets/globals.dart' as globals;
 
 class NavBar extends StatelessWidget {
   @override
@@ -11,24 +12,14 @@ class NavBar extends StatelessWidget {
         padding: EdgeInsets.zero,
         children: [
           UserAccountsDrawerHeader(
-            accountName: const Text('Oflutter.com'),
-            accountEmail: const Text('example@gmail.com'),
-            currentAccountPicture: CircleAvatar(
-              child: ClipOval(
-                child: Image.network(
-                  'https://oflutter.com/wp-content/uploads/2021/02/girl-profile.png',
-                  fit: BoxFit.cover,
-                  width: 90,
-                  height: 90,
-                ),
-              ),
+            accountName: const Text(
+              'Profile',
+              style: TextStyle(fontSize: 30),
             ),
+            accountEmail:
+                Text(globals.globalString), //to show the user's email id
             decoration: const BoxDecoration(
-              color: Colors.blue,
-              image: DecorationImage(
-                  fit: BoxFit.fill,
-                  image: NetworkImage(
-                      'https://oflutter.com/wp-content/uploads/2021/02/profile-bg3.jpg')),
+              color: Color.fromARGB(255, 0, 0, 0),
             ),
           ),
           ListTile(
@@ -42,21 +33,16 @@ class NavBar extends StatelessWidget {
             onTap: () => OpenSettings.openLocationSourceSetting(),
           ),
           ListTile(
-            leading: const Icon(Icons.location_searching),
+            leading: const Icon(Icons.notifications),
             title: const Text('Notifications'),
             onTap: () => OpenSettings.openNotificationSetting(),
           ),
-          ListTile(
-            leading: const Icon(Icons.location_searching),
-            title: const Text('Night Display'),
-            onTap: () => OpenSettings.openNightDisplaySetting(),
-          ),
-          const Divider(),
+          const Divider(), //to draw a line at the bottom for aesthetic purposes
           ListTile(
             title: const Text('Logout'),
             leading: const Icon(Icons.exit_to_app),
             onTap: () => Navigator.push(
-                context, MaterialPageRoute(builder: (_) => MainPage())),
+                context, MaterialPageRoute(builder: (_) => LoginPage())),
           ),
         ],
       ),

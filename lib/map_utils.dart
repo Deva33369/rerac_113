@@ -20,6 +20,7 @@ class MapUtils {
         southwest: LatLng(x0! - 1, y0! - 1));
   }
 
+  //to launch to google maps
   static Future<void> openMap(
     double latitude,
     double longtitude,
@@ -29,6 +30,25 @@ class MapUtils {
 
     if (await canLaunchUrl(launchmaps)) {
       await launchUrl(launchmaps);
+    }
+  }
+
+  //to launch to the forget password page of the website
+  static Future<void> openWebsiteFP() async {
+    final Uri launchwebFP =
+        Uri.parse("http://192.168.1.26:3000/forgot-password");
+
+    if (await canLaunchUrl(launchwebFP)) {
+      await launchUrl(launchwebFP);
+    }
+  }
+
+  //to launch website to sign up page
+  static Future<void> openWebsite() async {
+    final Uri launchweb = Uri.parse("http://192.168.1.26:3000/signup");
+
+    if (await canLaunchUrl(launchweb)) {
+      await launchUrl(launchweb);
     }
   }
 }

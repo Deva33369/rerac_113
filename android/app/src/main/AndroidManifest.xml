@@ -1,4 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+
 xmlns:tools="http://schemas.android.com/tools"
     package="com.example.rerac_113">
     <uses-permission android:name="android.permission.INTERNET" />
@@ -11,11 +12,20 @@ xmlns:tools="http://schemas.android.com/tools"
     <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 
+    <queries>
+    <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="https" />
+    </intent>
+    </queries>
+
    <application
         android:allowBackup = "true"
         android:label="rerac_113"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config"
         tools:replace="android:icon,android:label,android:name,android:allowBackup">
 
         <meta-data android:name="com.google.android.geo.API_KEY"

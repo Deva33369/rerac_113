@@ -1,28 +1,26 @@
-// ignore_for_file: prefer_const_constructors
+// ignore_for_file: library_private_types_in_public_api
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui' as ui;
-import 'dart:io';
-import 'package:geofence_service/geofence_service.dart';
-import 'package:http/http.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
+import 'package:geofence_service/geofence_service.dart';
 import 'package:rerac_113/map_utils.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:rerac_113/widgets/globals.dart';
 import 'package:google_place/google_place.dart';
-import 'package:location/location.dart' as loc;
 import 'package:geolocator/geolocator.dart';
-import 'dart:math';
-import 'package:geofence_service/geofence_service.dart' as geo;
+import 'package:geolocator/geolocator.dart' as geo;
+import 'package:http/http.dart';
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:rerac_113/locationInfo/blk23.dart';
+import 'package:rerac_113/locationInfo/blk8.dart';
 import 'package:rerac_113/locationInfo/blk72.dart';
 import 'package:rerac_113/locationInfo/blk73.dart';
-import 'package:geolocator/geolocator.dart' as geoloc;
-import 'package:rerac_113/locationInfo/blk8.dart';
-import 'package:rerac_113/locationInfo/sit.dart';
 import 'package:rerac_113/locationInfo/blk51.dart';
+import 'package:rerac_113/locationInfo/sit.dart';
 
 class MapScreen extends StatefulWidget {
   final DetailsResult? startPosition;
@@ -35,55 +33,26 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
+  late CameraPosition _initialPosition;
+  Map<PolylineId, Polyline> polylines = {};
+  GoogleMapController? mapController;
+  List<dynamic> fullRiskData = [];
   Map riskData = {};
   List<dynamic> waypointData = [];
-  late CameraPosition _initialPosition;
-  GoogleMapController? mapController;
-  final Completer<GoogleMapController> _controller = Completer();
-  Map<PolylineId, Polyline> polylines = {};
   List<LatLng> polylineCoordinates = [];
   PolylinePoints polylinePoints = PolylinePoints();
-  double velocity = 0;
-  int waypointCounter = 0;
+  final Completer<GoogleMapController> _controller = Completer();
 
-  final Set<Marker> markers = new Set();
-  final Set<Circle> _circles = new Set();
-
-  _getWaypoint() async {
-    final queryParameters = {'request': 'ALL', 'database': 'waypoints'};
-    final url = Uri.http(_localhost(), '/get', queryParameters);
-    Response response = await get(url);
-    setState(() {
-      waypointData = jsonDecode(response.body);
-    });
-  }
-
-  _getRisk() async {
-    final queryParameters = {'request': 'ALL', 'database': 'risks'};
-    final url = Uri.http(_localhost(), '/get', queryParameters);
-    Response response = await get(url);
-    setState(() {
-      final risks = jsonDecode(response.body).last;
-      riskData = risks;
-    });
-  }
-
-  String _localhost() {
-    if (Platform.isAndroid) {
-      return '10.0.2.2:3000';
-    } else {
-      return '127.0.0.1:3000';
-    }
-  }
+  final Set<Marker> markers = {};
+  final Set<Circle> _circles = {};
 
   @override
   void initState() {
-    // TODO: implement initState
     _determinePosition(); //just for authorisations
 
     Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
-      accuracy: geoloc.LocationAccuracy.bestForNavigation,
+      accuracy: geo.LocationAccuracy.bestForNavigation,
       //distanceFilter: 0,
     )).listen((Position position) {
       _onAccelerate(position);
@@ -97,6 +66,71 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  //getting data of the 6 locations from the databsase
+  _getWaypoint() async {
+    final queryParameters = {'request': 'ALL', 'database': 'waypoints'};
+    final url = Uri.http(_localhost(), '/get', queryParameters);
+    Response response = await get(url);
+    setState(() {
+      waypointData = jsonDecode(response.body);
+    });
+  }
+
+  //getting the risk data of the 6 locations from the database
+  _getRisk() async {
+    final queryParameters = {'request': 'ALL', 'database': 'risks'};
+    final url = Uri.http(_localhost(), '/get', queryParameters);
+    Response response = await get(url);
+    setState(() {
+      fullRiskData = jsonDecode(response.body);
+      Map risks = jsonDecode(response.body).last;
+      risks.removeWhere((key, value) => key == "Date");
+      risks.removeWhere((key, value) => key == "Time");
+      riskData = risks;
+    });
+  }
+
+  String _localhost() {
+    if (Platform.isAndroid) {
+      return IPaddress;
+    } else {
+      return '127.0.0.1:3000';
+    }
+  }
+
+  //marker for location to be shown on the map
+  BitmapDescriptor currentLocationIcon = BitmapDescriptor.defaultMarker;
+
+  void _setMarker(LatLng point) {
+    setState(() {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('marker'),
+          position: point,
+        ),
+      );
+    });
+  }
+
+  _getGeofence() {
+    _getWaypoint();
+    List<Geofence> geofenceList = [];
+    //this is getting the geofence list locations from the database
+    for (int i = 0; i < 6; i++) {
+      String id = waypointData[i]["Name"];
+      double latitude = waypointData[i]["Latitude"].toDouble();
+      double longitude = waypointData[i]["Longitude"].toDouble();
+      geofenceList.add(
+          Geofence(id: id, latitude: latitude, longitude: longitude, radius: [
+        GeofenceRadius(id: 'radius_50m', length: 200),
+        GeofenceRadius(id: 'radius_150m', length: 200),
+        GeofenceRadius(id: 'radius_200m', length: 200),
+      ]));
+    }
+    return geofenceList;
+  }
+
+  //setting the size of the icon marker to be on the map
   Future<Uint8List> getImages(String path, int width) async {
     ByteData data = await rootBundle.load(path);
     ui.Codec codec = await ui.instantiateImageCodec(data.buffer.asUint8List(),
@@ -107,267 +141,58 @@ class _MapScreenState extends State<MapScreen> {
         .asUint8List();
   }
 
-  BusStopMarker() async {
+  //this is to show the bus stop icon on the map
+  busStopMarker() async {
     final Uint8List markIcons = await getImages('assets/bus_stop.png', 100);
     // makers added according to index
     markers.add(Marker(
       // given marker id
-      markerId: MarkerId("bus stop timings"),
+      markerId: const MarkerId("Bus stop Timings"),
       // given marker icon
       icon: BitmapDescriptor.fromBytes(markIcons),
       // given position
-      position: LatLng(1.332452, 103.777685),
-      infoWindow: InfoWindow(
+      position: const LatLng(1.332452, 103.777685),
+      infoWindow: const InfoWindow(
         // given title for marker
-        title: 'bus timings',
+        title: 'Bus Timings',
       ),
 
       onTap: () {},
     ));
   }
 
-  _getGeofence() {
-    List<Geofence> geofenceList = [];
-
-    for (int i = 0; i < waypointData.length; i++) {
-      String id = waypointData[i]["Name"].replaceAll(" ", "").toLowerCase();
-      double latitude = waypointData[i]["Latitude"].toDouble();
-      double longitude = waypointData[i]["Longitude"].toDouble();
-      geofenceList.add(
-          Geofence(id: id, latitude: latitude, longitude: longitude, radius: [
-        GeofenceRadius(id: 'radius_25m', length: 25),
-        GeofenceRadius(id: 'radius_100m', length: 100),
-        GeofenceRadius(id: 'radius_200m', length: 200),
-      ]));
-    }
-    return geofenceList;
-  }
-  // final _geofenceList = <geo.Geofence>[
-  //   // Geofence(
-  //   //   id: 'clementi_mall',
-  //   //   latitude: 37.4220936,
-  //   //   longitude: -122.083922,
-  //   //   radius: [
-  //   //     GeofenceRadius(id: 'radius_100m', length: 100),
-  //   //     GeofenceRadius(id: 'radius_25m', length: 25),
-  //   //     GeofenceRadius(id: 'radius_250m', length: 250),
-  //   //     GeofenceRadius(id: 'radius_200m', length: 200),
-  //   //   ],
-  //   // ),
-  //   geo.Geofence(
-  //     id: 'blk51',
-  //     latitude: 37.4220936,
-  //     longitude: -122.083922,
-  //     radius: [
-  //       geo.GeofenceRadius(id: 'radius_25m', length: 200),
-  //       geo.GeofenceRadius(id: 'radius_100m', length: 250),
-  //       geo.GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  //   geo.Geofence(
-  //     id: 'blk72',
-  //     latitude: 1.3318895388375338,
-  //     longitude: 103.77571465588211,
-  //     radius: [
-  //       geo.GeofenceRadius(id: 'radius_25m', length: 200),
-  //       geo.GeofenceRadius(id: 'radius_100m', length: 250),
-  //       geo.GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  //   geo.Geofence(
-  //     id: 'blk73',
-  //     latitude: 1.3320323222018304,
-  //     longitude: 103.77649335992052,
-  //     radius: [
-  //       geo.GeofenceRadius(id: 'radius_25m', length: 200),
-  //       geo.GeofenceRadius(id: 'radius_100m', length: 250),
-  //       geo.GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  //   geo.Geofence(
-  //     id: 'blk23',
-  //     latitude: 1.3339717453574258,
-  //     longitude: 103.77531565381817,
-  //     radius: [
-  //       geo.GeofenceRadius(id: 'radius_25m', length: 200),
-  //       geo.GeofenceRadius(id: 'radius_100m', length: 250),
-  //       geo.GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  //   geo.Geofence(
-  //     id: 'blk8',
-  //     latitude: 1.334792177762611,
-  //     longitude: 103.77629441346048,
-  //     radius: [
-  //       geo.GeofenceRadius(id: 'radius_25m', length: 200),
-  //       geo.GeofenceRadius(id: 'radius_100m', length: 250),
-  //       geo.GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  //   geo.Geofence(
-  //     id: 'sit',
-  //     latitude: 1.3342380695589044,
-  //     longitude: 103.7744542762125,
-  //     radius: [
-  //       geo.GeofenceRadius(id: 'radius_25m', length: 200),
-  //       geo.GeofenceRadius(id: 'radius_100m', length: 250),
-  //       geo.GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  // ];
-
-  addMarkers(img, location, id) async {
-    BitmapDescriptor markerbitmap = await BitmapDescriptor.fromAssetImage(
-      ImageConfiguration(),
-      img,
-    );
-    markers.add(Marker(
-        markerId: MarkerId('start'),
-        position: LatLng(widget.startPosition!.geometry!.location!.lat!,
-            widget.startPosition!.geometry!.location!.lng!)));
-    markers.add(Marker(
-        markerId: MarkerId('end'),
-        position: LatLng(widget.endPosition!.geometry!.location!.lat!,
-            widget.endPosition!.geometry!.location!.lng!)));
-
-    markers.add(Marker(
-      //add start location marker
-      markerId: MarkerId(id.toString()),
-      position: location, //position of marker
-      onTap: () {
-        if (id == 'blk8') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => blk8()));
-        } else if (id == 'blk23') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => blk23()));
-        } else if (id == 'blk51') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => blk51()));
-        } else if (id == 'blk72') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => blk72()));
-        } else if (id == 'blk73') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => blk73()));
-        } else if (id == 'sit') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => sit()));
-        }
-      },
-      icon: markerbitmap, //Icon for Marker
-    ));
+  // This function adds a polyline to the map, connecting the start and end positions.
+  _addPolyLine() {
+    PolylineId id = const PolylineId("poly");
+    Polyline polyline = Polyline(
+        polylineId: id,
+        color: Colors.blue,
+        points: polylineCoordinates,
+        width: 5);
+    // Adds the polyline to the set of polylines on the map.
+    polylines[id] = polyline;
+    setState(() {});
   }
 
-  Set<Marker> _markers() {
-    _getRisk();
-    var risknum = {
-      _getGeofence()[0].id.toString(): riskData["Blk 51"].toString(),
-      _getGeofence()[1].id.toString(): riskData["Blk 72"].toString(),
-      _getGeofence()[2].id.toString(): riskData["Blk 73"].toString(),
-      _getGeofence()[3].id.toString(): riskData["Blk 23"].toString(),
-      _getGeofence()[4].id.toString(): riskData["Blk 8"].toString(),
-      _getGeofence()[5].id.toString(): riskData["SIT"].toString(),
-    };
-    //markers to place on map
-    setState(() {
-      for (int i = 0; i < 6; i++) {
-        if (risknum[_getGeofence()[i].id.toString()] == '1') {
-          addMarkers(
-              'assets/greenCamera.png',
-              LatLng(_getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              _getGeofence()[i].id.toString());
+  // This function gets the polyline between the start and end positions, using the Google Maps Directions API.
+  _getPolyline() async {
+    PolylineResult result = await polylinePoints.getRouteBetweenCoordinates(
+        'AIzaSyCsqrq6bn25yMgMQILghZZ3bVcb29V5ubA',
+        // Start position of the polyline.
+        PointLatLng(widget.startPosition!.geometry!.location!.lat!,
+            widget.startPosition!.geometry!.location!.lng!),
 
-          _circles.add(Circle(
-              circleId: CircleId(_getGeofence()[i].id.toString()),
-              center: LatLng(
-                  _getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              radius: 25,
-              fillColor: Colors.greenAccent.withOpacity(0.5),
-              strokeWidth: 3,
-              strokeColor: Colors.greenAccent));
-        } else if (risknum[_getGeofence()[i].id.toString()] == '2') {
-          addMarkers(
-              'assets/orangeCamera.png',
-              LatLng(_getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              _getGeofence()[i].id.toString());
-
-          _circles.add(Circle(
-              circleId: CircleId(_getGeofence()[i].id.toString()),
-              center: LatLng(
-                  _getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              radius: 25,
-              fillColor: Colors.orangeAccent.withOpacity(0.5),
-              strokeWidth: 3,
-              strokeColor: Colors.orangeAccent));
-        } else if (risknum[_getGeofence()[i].id.toString()] == '3') {
-          addMarkers(
-              'assets/redCamera.png',
-              LatLng(_getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              _getGeofence()[i].id.toString());
-
-          _circles.add(Circle(
-              circleId: CircleId(_getGeofence()[i].id.toString()),
-              center: LatLng(
-                  _getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              radius: 25,
-              fillColor: Colors.redAccent.withOpacity(0.5),
-              strokeWidth: 3,
-              strokeColor: Colors.redAccent));
-        }
+        // End position of the polyline.
+        PointLatLng(widget.endPosition!.geometry!.location!.lat!,
+            widget.endPosition!.geometry!.location!.lng!),
+        travelMode: TravelMode.driving);
+    if (result.points.isNotEmpty) {
+      // Adds each point of the polyline to the list of polyline coordinates.
+      for (var point in result.points) {
+        polylineCoordinates.add(LatLng(point.latitude, point.longitude));
       }
-
-      //add more markers here
-    });
-
-    return markers;
-  }
-
-  Future<Position> _determinePosition() async {
-    bool serviceEnabled;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      // not enabled
-      return Future.error('Location services are disabled.');
     }
-
-    return await geoloc.Geolocator.getCurrentPosition(
-        desiredAccuracy: geoloc.LocationAccuracy.bestForNavigation);
-  }
-
-  void _onAccelerate(Position position) {
-    setState(() {
-      velocity = position.speed;
-    });
-  }
-
-  loc.LocationData? currentLocation;
-  void getCurrentLocation() async {
-    loc.Location location = loc.Location();
-    location.getLocation().then(
-      (location) {
-        currentLocation = location;
-      },
-    );
-    GoogleMapController googleMapController = await _controller.future;
-    location.onLocationChanged.listen(
-      (newLoc) {
-        currentLocation = newLoc;
-        googleMapController.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(
-              zoom: 13.5,
-              target: LatLng(
-                newLoc.latitude!,
-                newLoc.longitude!,
-              ),
-            ),
-          ),
-        );
-        setState(() {});
-      },
-    );
+    _addPolyLine();
   }
 
   Future<Position> getUserCurrentLocation() async {
@@ -384,48 +209,28 @@ class _MapScreenState extends State<MapScreen> {
     return await Geolocator.getCurrentPosition();
   }
 
-  _addPolyLine() {
-    PolylineId id = PolylineId("poly");
-    Polyline polyline = Polyline(
-        polylineId: id,
-        color: Colors.blue,
-        points: polylineCoordinates,
-        width: 3);
-    polylines[id] = polyline;
-    setState(() {});
+  Future<Position> _determinePosition() async {
+    bool serviceEnabled;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // not enabled
+      return Future.error('Location services are disabled.');
+    }
+
+    return await geo.Geolocator.getCurrentPosition(
+        desiredAccuracy: geo.LocationAccuracy.bestForNavigation);
   }
 
-  double totalDistance = 0;
-
-  _getPolyline() async {
-    PolylineResult result = await polylinePoints.getRouteBetweenCoordinates(
-        'AIzaSyCsqrq6bn25yMgMQILghZZ3bVcb29V5ubA',
-        PointLatLng(widget.startPosition!.geometry!.location!.lat!,
-            widget.startPosition!.geometry!.location!.lng!),
-        PointLatLng(widget.endPosition!.geometry!.location!.lat!,
-            widget.endPosition!.geometry!.location!.lng!),
-        travelMode: TravelMode.driving);
-
-    if (result.points.isNotEmpty) {
-      result.points.forEach((PointLatLng point) {
-        polylineCoordinates.add(LatLng(point.latitude, point.longitude));
-      });
-    }
-    _addPolyLine();
+  void _onAccelerate(Position position) {
+    setState(() {
+      velocity = position.speed;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    // Set<Marker> _markers = {
-    //   Marker(
-    //       markerId: MarkerId('start'),
-    //       position: LatLng(widget.startPosition!.geometry!.location!.lat!,
-    //           widget.startPosition!.geometry!.location!.lng!)),
-    //   Marker(
-    //       markerId: MarkerId('end'),
-    //       position: LatLng(widget.endPosition!.geometry!.location!.lat!,
-    //           widget.endPosition!.geometry!.location!.lng!))
-    // };
+    rebuildAllChildren(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -435,9 +240,9 @@ class _MapScreenState extends State<MapScreen> {
           onPressed: () {
             Navigator.pop(context);
           },
-          icon: CircleAvatar(
+          icon: const CircleAvatar(
             backgroundColor: Colors.white,
-            child: const Icon(
+            child: Icon(
               Icons.arrow_back,
               color: Colors.black,
             ),
@@ -453,8 +258,8 @@ class _MapScreenState extends State<MapScreen> {
             zoomGesturesEnabled: true,
             zoomControlsEnabled: false,
             myLocationEnabled: true,
-            myLocationButtonEnabled: true,
-            markers: _markers(),
+            myLocationButtonEnabled: false,
+            markers: getmarkers(),
             onMapCreated: (controller) {
               _controller.complete(controller);
               setState(() {
@@ -497,7 +302,7 @@ class _MapScreenState extends State<MapScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text("Speed: " + velocity.toStringAsFixed(2) + " KM/h",
+                        Text("Speed: " + velocity.toStringAsFixed(2),
                             style: TextStyle(
                                 fontSize: 20, fontWeight: FontWeight.bold)),
                       ],
@@ -508,7 +313,7 @@ class _MapScreenState extends State<MapScreen> {
         ],
       ),
       floatingActionButton: Container(
-        padding: const EdgeInsets.only(top: 50, right: 0),
+        padding: const EdgeInsets.only(top: 100, right: 0),
         alignment: Alignment.topRight,
         child: Column(
           //will break to another line on overflow
@@ -538,7 +343,11 @@ class _MapScreenState extends State<MapScreen> {
                     });
                     //   //action code for button 1
                   },
-                  child: Icon(Icons.my_location),
+                  backgroundColor: Colors.white,
+                  child: Icon(
+                    Icons.my_location,
+                    color: Colors.black,
+                  ),
                 )), //button first
 
             Container(
@@ -550,12 +359,130 @@ class _MapScreenState extends State<MapScreen> {
                         widget.endPosition!.geometry!.location!.lat!,
                         widget.endPosition!.geometry!.location!.lng!);
                   },
-                  backgroundColor: Colors.deepPurpleAccent,
-                  child: Icon(Icons.map_outlined),
+                  backgroundColor: Colors.white,
+                  child: Icon(
+                    Icons.map_outlined,
+                    color: Colors.black,
+                  ),
+                )),
+
+            Container(
+                margin: EdgeInsets.all(10),
+                child: FloatingActionButton(
+                  heroTag: "speedometer",
+                  onPressed: () {},
+                  backgroundColor: Colors.white,
+                  child: Text(velocity.toStringAsFixed(2),
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black)),
                 )),
           ],
         ),
       ),
     );
+  }
+
+  void rebuildAllChildren(BuildContext context) {
+    void rebuild(Element el) {
+      el.markNeedsBuild();
+      el.visitChildren(rebuild);
+    }
+
+    (context as Element).visitChildren(rebuild);
+  }
+
+  addMarkers(img, location, id) async {
+    BitmapDescriptor markerbitmap = await BitmapDescriptor.fromAssetImage(
+      const ImageConfiguration(),
+      img,
+    );
+
+    markers.add(Marker(
+        markerId: MarkerId('start'),
+        position: LatLng(widget.startPosition!.geometry!.location!.lat!,
+            widget.startPosition!.geometry!.location!.lng!)));
+    markers.add(Marker(
+        markerId: MarkerId('end'),
+        position: LatLng(widget.endPosition!.geometry!.location!.lat!,
+            widget.endPosition!.geometry!.location!.lng!)));
+
+    const Map waypointFunction = {
+      "Blk 8": Blk8(),
+      "Blk 23": Blk23(),
+      "Blk 72": Blk72(),
+      "Blk 73": Blk73(),
+      "Blk 51": Blk51(),
+      "SIT": SIT()
+    };
+
+    markers.add(Marker(
+      //add start location marker
+      markerId: MarkerId(id.toString()),
+      position: location, //position of marker
+      onTap: () {
+        for (int i = 0; i < waypointData.length; i++) {
+          if (id == waypointData[i]["Name"]) {
+            Navigator.push(context,
+                MaterialPageRoute(builder: (context) => waypointFunction[id]));
+            mapController?.animateCamera(CameraUpdate.newCameraPosition(
+                CameraPosition(
+                    target: LatLng(waypointData[i]["Latitude"],
+                        waypointData[i]["Longitude"]),
+                    zoom: 17)));
+          }
+        }
+      },
+      icon: markerbitmap, //Icon for Marker
+    ));
+  }
+
+  Set<Marker> getmarkers() {
+    _getWaypoint();
+    _getRisk();
+    Map risk = riskData;
+
+    //markers to place on map
+    setState(() {
+      for (int i = 0; i < waypointData.length; i++) {
+        risk.forEach((key, value) {
+          if (waypointData[i]["Name"] == key) {
+            String assets = 'assets/greenSmile.png';
+            Color fillColor = Colors.greenAccent.withOpacity(0.5);
+            Color strokeColor = Colors.greenAccent;
+            if (value >= 1 && value <= 3) {
+              assets = 'assets/greenSmile.png';
+              fillColor = Colors.greenAccent.withOpacity(0.5);
+              strokeColor = Colors.greenAccent;
+            } else if (value >= 4 && value <= 7) {
+              assets = 'assets/orangeSmile.png';
+              fillColor = Colors.orangeAccent.withOpacity(0.5);
+              strokeColor = Colors.orangeAccent;
+            } else if (value >= 8 && value <= 10) {
+              assets = 'assets/redSmile.png';
+              fillColor = Colors.redAccent.withOpacity(0.5);
+              strokeColor = Colors.redAccent;
+            }
+            addMarkers(
+                assets,
+                LatLng(
+                    waypointData[i]["Latitude"], waypointData[i]["Longitude"]),
+                key);
+
+            _circles.add(Circle(
+                circleId: CircleId(_getGeofence()[i].id),
+                center: LatLng(
+                    waypointData[i]["Latitude"], waypointData[i]["Longitude"]),
+                radius: 25,
+                fillColor: fillColor,
+                strokeWidth: 3,
+                strokeColor: strokeColor));
+          }
+        });
+      }
+    });
+
+    return markers;
   }
 }

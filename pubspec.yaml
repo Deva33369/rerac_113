@@ -65,6 +65,7 @@ dependencies:
   geocoding: ^2.0.5
   email_validator: ^2.1.17
   fluttertoast: ^8.1.2
+  maps_toolkit: ^2.0.1
 
 dev_dependencies:
   flutter_test:
@@ -92,9 +93,9 @@ flutter:
   assets:
     - icon.png
     - camera.png
-    - greenCamera.png
-    - redCamera.png
-    - orangeCamera.png
+    - greenSmile.png
+    - redSmile.png
+    - orangeSmile.png
     - blk51_1.jpg
     - blk51_2.jpg
     - blk51_3.jpg

@@ -1,5 +1,6 @@
+// ignore_for_file: depend_on_referenced_packages, library_private_types_in_public_api
+
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'dart:io';
 import 'package:http/http.dart';
@@ -11,57 +12,75 @@ import 'package:rerac_113/locationInfo/blk72.dart';
 import 'package:rerac_113/locationInfo/blk73.dart';
 import 'package:rerac_113/locationInfo/blk8.dart';
 import 'package:rerac_113/locationInfo/sit.dart';
+import 'package:rerac_113/screens/bus_stop.dart';
 import 'package:rerac_113/screens/search_screen.dart';
 import 'package:flutter_google_places_hoc081098/flutter_google_places_hoc081098.dart';
 import 'package:google_api_headers/google_api_headers.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_webservice/places.dart' as web;
 import 'dart:async';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:rerac_113/notifications.dart';
-import 'package:timezone/data/latest.dart' as tz;
 import 'package:geofence_service/geofence_service.dart';
-import 'package:sliding_up_panel/sliding_up_panel.dart';
 import 'package:text_to_speech/text_to_speech.dart';
 import '../locationInfo/blk51.dart';
-import 'package:rerac_113/widgets/speedometer_container.dart';
 import 'package:rerac_113/widgets/NavBar.dart';
 import 'package:location/location.dart' as loc;
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:rerac_113/widgets/globals.dart';
+import 'package:rerac_113/screens/bus_stop.dart';
+import 'package:intl/src/intl/date_format.dart';
 
 class Home extends StatefulWidget {
+  const Home({super.key});
+
   @override
   _HomeState createState() => _HomeState();
 }
 
 class _HomeState extends State<Home> {
+  List<dynamic> fullRiskData =
+      []; // initialising a list for taking in risk data from the database
   Map riskData = {};
-  List<dynamic> waypointData = [];
-  String googleApikey = "AIzaSyCsqrq6bn25yMgMQILghZZ3bVcb29V5ubA";
+  List<dynamic> waypointData =
+      []; // initialising a list for taking in location data from the database
+  String googleApikey =
+      "AIzaSyCsqrq6bn25yMgMQILghZZ3bVcb29V5ubA"; //google API key
   GoogleMapController? mapController; //contrller for Google map
   CameraPosition? cameraPosition;
-  LatLng startLocation = LatLng(1.33206, 103.77436);
+  LatLng startLocation = const LatLng(1.333099716482213, 103.77543852414324);
   String location = "Search Location";
   int waypointCounter = 0;
+  int interval = 30;
 
-  TextToSpeech tts = TextToSpeech();
+  TextToSpeech tts = TextToSpeech(); // setting text to speech variable
 
-  Completer<GoogleMapController> _controller = Completer();
+  final Completer<GoogleMapController> _controller = Completer();
 
   final _activityStreamController = StreamController<Activity>.broadcast();
   final _geofenceStreamController = StreamController<Geofence>.broadcast();
+  //this code declares a broadcast stream controller that emits events of type Activity.
+  //It can be used to create a stream of activity events that multiple parts of an application can subscribe to and receive updates.
 
-  String text = '';
+  //initialising the variable for the speech to text function
   double volume = 1; // Range: 0-1
   double rate = 1.0; // Range: 0-2
   double pitch = 1.0;
 
-  double velocity = 0.0;
-
   bool sense = false;
-  final Set<Marker> markers = new Set();
-  final Set<Circle> _circles = new Set();
 
+  //this code declares two immutable sets to hold Marker and Circle objects, respectively.
+  //These sets can be used to keep track of the markers and circles that are added to a Google Map in a Flutter app.
+  final Set<Marker> markers = {};
+  final Set<Circle> _circles = {};
+
+  Position? _currentUserPosition;
+  double? distanceInMeter = 0.0;
+
+  String text = '';
+
+  //speech to text function
   void speak() {
     tts.setVolume(volume);
     tts.setRate(rate);
@@ -71,20 +90,19 @@ class _HomeState extends State<Home> {
 
   loc.LocationData? currentLocation;
 
+  //get the user's current location
   Future<geo.Position> getUserCurrentLocation() async {
     await geo.Geolocator.requestPermission()
         .then((value) {})
         .onError((error, stackTrace) async {
       await geo.Geolocator.requestPermission();
-      print("ERROR" + error.toString());
 
-      getUserCurrentLocation().then((value) {
-        print(value.latitude.toString() + value.longitude.toString());
-      });
+      getUserCurrentLocation().then((value) {});
     });
     return await geo.Geolocator.getCurrentPosition();
   }
 
+  //getting the user's current location for speed calculation
   Future<geo.Position> _determinePosition() async {
     bool serviceEnabled;
 
@@ -98,12 +116,19 @@ class _HomeState extends State<Home> {
         desiredAccuracy: geo.LocationAccuracy.bestForNavigation);
   }
 
+  //This function updates the velocity variable in the current state of
+  //the widget with the speed value of the input position.
   void _onAccelerate(geo.Position position) {
+    //The setState method is called to update the
+    //state of the widget with the new value of velocity.
     setState(() {
       velocity = position.speed;
     });
   }
 
+  //this function is mainly for turn by turn navigation but since we do not have access to
+  //the sdk, I placed at this screen
+  //displays the map and updates the map's position based on the user's current location.
   void getCurrentLocation() async {
     loc.Location location = loc.Location();
     location.getLocation().then(
@@ -127,176 +152,190 @@ class _HomeState extends State<Home> {
       setState(() {});
     });
 
-    // markers.add(
-    //   Marker(
-    //     markerId: const MarkerId("currentLocation"),
-    //     icon: currentLocationIcon,
-    //     position:
-    //         LatLng(currentLocation!.latitude!, currentLocation!.longitude!),
-    //   ),
-    // );
+    //The setState method is called to update the state of the widget, which will trigger a rebuild of any UI
+    //components that depend on the currentLocation variable.
     setState(() {});
   }
 
+  //calculates the distance between the user's current location and
+  //the 6 marked off locations
+  Future _calculateDistance() async {
+    _currentUserPosition = await Geolocator.getCurrentPosition(
+        desiredAccuracy: geo.LocationAccuracy.high);
+
+    for (int i = 0; i < 6; i++) {
+      distanceInMeter = Geolocator.distanceBetween(
+          //using the geolocator package to calculate the distance
+          //between the points and the current location to sense whether are they near any of the locations
+          _currentUserPosition!.latitude,
+          _currentUserPosition!.longitude,
+          _geofenceList[i].latitude,
+          _geofenceList[i].longitude);
+      if (distanceInMeter! <= 25) {
+        //sends them a notification once they are less than 25m away from
+        //the location
+        NotificationService()
+            .showNotification(1, "You are nearby", _geofenceList[i].id, 5);
+      }
+    }
+  }
+
+  //getting data of the 6 locations from the databsase
   _getWaypoint() async {
     final queryParameters = {'request': 'ALL', 'database': 'waypoints'};
     final url = Uri.http(_localhost(), '/get', queryParameters);
     Response response = await get(url);
+
     setState(() {
       waypointData = jsonDecode(response.body);
     });
   }
 
+  //getting the risk data of the 6 locations from the database
   _getRisk() async {
     final queryParameters = {'request': 'ALL', 'database': 'risks'};
     final url = Uri.http(_localhost(), '/get', queryParameters);
     Response response = await get(url);
     setState(() {
-      final risks = jsonDecode(response.body).last;
+      fullRiskData = jsonDecode(response.body);
+      Map risks = jsonDecode(response.body).last;
+      risks.removeWhere((key, value) => key == "Date");
+      risks.removeWhere((key, value) => key == "Time");
       riskData = risks;
     });
   }
 
+  //sends the person's email id, date, time and the speed to the database everytime they exceed the speed limit
+  _appendSpeed() async {
+    DateTime now = DateTime.now();
+    String formattedDate = DateFormat('dd-MM-yyyy').format(now);
+    String formattedTime = DateFormat('HH:mm:ss').format(now);
+    final data = {
+      "date": formattedDate,
+      "time": formattedTime,
+      "email": globalString,
+      "speed": velocity
+    };
+    final queryParameters = {
+      'request': 'APPEND',
+      'database': 'speed',
+      'data': data
+    };
+    final url = Uri.http(_localhost(), '/post', queryParameters);
+    Response response = await get(url);
+  }
+
+  //communicates with a local server
   String _localhost() {
     if (Platform.isAndroid) {
-      return '192.168.1.26:3000';
+      return IPaddress;
     } else {
       return '127.0.0.1:3000';
     }
   }
 
-  @override
-  void initState() {
-    // TODO: implement initState
-    _determinePosition(); //just for authorisations
-
-    geo.Geolocator.getPositionStream(
-        locationSettings: const geo.LocationSettings(
-      accuracy: geo.LocationAccuracy.bestForNavigation,
-      //distanceFilter: 0,
-    )).listen((Position position) {
-      _onAccelerate(position);
-    });
-  }
-
-  BitmapDescriptor currentLocationIcon = BitmapDescriptor.defaultMarker;
-
-  currentLocIcon() async {
-    BitmapDescriptor.fromAssetImage(
-            ImageConfiguration.empty, "assets/camera.png")
-        .then(
-      (icon) {
-        currentLocationIcon = icon;
-      },
-    );
-  }
-
+  //setting marker
   void _setMarker(LatLng point) {
     setState(() {
       markers.add(
         Marker(
-          markerId: MarkerId('marker'),
+          markerId: const MarkerId('marker'),
           position: point,
         ),
       );
     });
   }
 
+  //uses geofencing to trigger actions based on the user's location.
+  //The _geofenceList list represents a pre-defined set of locations that the app is monitoring for geofencing events,
+  //and the radii around each location determine the specific trigger conditions for each geofence.
+  final _geofenceList = <Geofence>[
+    Geofence(
+      id: 'Blk 51',
+      latitude: 1.33207,
+      longitude: 103.77436,
+      radius: [
+        GeofenceRadius(id: 'radius_25m', length: 5),
+        GeofenceRadius(id: 'radius_100m', length: 25),
+        GeofenceRadius(id: 'radius_200m', length: 100),
+      ],
+    ),
+    Geofence(
+      id: 'Blk 72',
+      latitude: 1.33188,
+      longitude: 103.77571,
+      radius: [
+        GeofenceRadius(id: 'radius_25m', length: 5),
+        GeofenceRadius(id: 'radius_100m', length: 25),
+        GeofenceRadius(id: 'radius_200m', length: 100),
+      ],
+    ),
+    Geofence(
+      id: 'Blk 73',
+      latitude: 1.33202,
+      longitude: 103.77652,
+      radius: [
+        GeofenceRadius(id: 'radius_25m', length: 5),
+        GeofenceRadius(id: 'radius_100m', length: 25),
+        GeofenceRadius(id: 'radius_200m', length: 100),
+      ],
+    ),
+    Geofence(
+      id: 'Blk 23',
+      latitude: 1.33398,
+      longitude: 103.77530,
+      radius: [
+        GeofenceRadius(id: 'radius_25m', length: 5),
+        GeofenceRadius(id: 'radius_100m', length: 25),
+        GeofenceRadius(id: 'radius_200m', length: 100),
+      ],
+    ),
+    Geofence(
+      id: 'Blk 8',
+      latitude: 1.33470,
+      longitude: 103.77675,
+      radius: [
+        GeofenceRadius(id: 'radius_25m', length: 5),
+        GeofenceRadius(id: 'radius_100m', length: 25),
+        GeofenceRadius(id: 'radius_200m', length: 100),
+      ],
+    ),
+    Geofence(
+      id: 'SIT',
+      latitude: 1.33421,
+      longitude: 103.77444,
+      radius: [
+        GeofenceRadius(id: 'radius_25m', length: 5),
+        GeofenceRadius(id: 'radius_100m', length: 25),
+        GeofenceRadius(id: 'radius_200m', length: 100),
+      ],
+    ),
+  ];
+
+  //this is getting the geofence list locations from the database
   _getGeofence() {
+    _getWaypoint();
+
     List<Geofence> geofenceList = [];
 
     for (int i = 0; i < 6; i++) {
-      String id = waypointData[i]["Name"].replaceAll(" ", "").toLowerCase();
+      String id = waypointData[i]["Name"];
       double latitude = waypointData[i]["Latitude"].toDouble();
       double longitude = waypointData[i]["Longitude"].toDouble();
       geofenceList.add(
           Geofence(id: id, latitude: latitude, longitude: longitude, radius: [
-        GeofenceRadius(id: 'radius_25m', length: 25),
-        GeofenceRadius(id: 'radius_100m', length: 100),
-        GeofenceRadius(id: 'radius_200m', length: 200),
+        GeofenceRadius(id: 'radius_50m', length: 5),
+        GeofenceRadius(id: 'radius_150m', length: 25),
+        GeofenceRadius(id: 'radius_200m', length: 100),
       ]));
     }
     return geofenceList;
   }
 
-  // This function is to be called when a location services status change occurs
-  // since the service was started.
-  // final _geofenceList = <Geofence>[
-  //   // Geofence(
-  //   //   id: 'clementi_mall',
-  //   //   latitude: 37.4220936,
-  //   //   longitude: -122.083922,
-  //   //   radius: [
-  //   //     GeofenceRadius(id: 'radius_100m', length: 100),
-  //   //     GeofenceRadius(id: 'radius_25m', length: 25),
-  //   //     GeofenceRadius(id: 'radius_250m', length: 250),
-  //   //     GeofenceRadius(id: 'radius_200m', length: 200),
-  //   //   ],
-  //   // ),
-  //   Geofence(
-  //     id: 'blk51',
-  //     latitude: 37.4220936,
-  //     longitude: -122.083922,
-  //     radius: [
-  //       GeofenceRadius(id: 'radius_25m', length: 200),
-  //       GeofenceRadius(id: 'radius_100m', length: 250),
-  //       GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  //   Geofence(
-  //     id: 'blk72',
-  //     latitude: 1.3318895388375338,
-  //     longitude: 103.77571465588211,
-  //     radius: [
-  //       GeofenceRadius(id: 'radius_25m', length: 200),
-  //       GeofenceRadius(id: 'radius_100m', length: 250),
-  //       GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  //   Geofence(
-  //     id: 'blk73',
-  //     latitude: 1.3320323222018304,
-  //     longitude: 103.77649335992052,
-  //     radius: [
-  //       GeofenceRadius(id: 'radius_25m', length: 200),
-  //       GeofenceRadius(id: 'radius_100m', length: 250),
-  //       GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  //   Geofence(
-  //     id: 'blk23',
-  //     latitude: 1.3339717453574258,
-  //     longitude: 103.77531565381817,
-  //     radius: [
-  //       GeofenceRadius(id: 'radius_25m', length: 200),
-  //       GeofenceRadius(id: 'radius_100m', length: 250),
-  //       GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  //   Geofence(
-  //     id: 'blk8',
-  //     latitude: 1.334792177762611,
-  //     longitude: 103.77629441346048,
-  //     radius: [
-  //       GeofenceRadius(id: 'radius_25m', length: 200),
-  //       GeofenceRadius(id: 'radius_100m', length: 250),
-  //       GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  //   Geofence(
-  //     id: 'sit',
-  //     latitude: 1.3342380695589044,
-  //     longitude: 103.7744542762125,
-  //     radius: [
-  //       GeofenceRadius(id: 'radius_25m', length: 200),
-  //       GeofenceRadius(id: 'radius_100m', length: 250),
-  //       GeofenceRadius(id: 'radius_200m', length: 300),
-  //     ],
-  //   ),
-  // ];
-
   @override
   Widget build(BuildContext context) {
+    rebuildAllChildren(context);
+
     return Scaffold(
       drawer: NavBar(),
       body: Stack(children: [
@@ -312,14 +351,12 @@ class _HomeState extends State<Home> {
           initialCameraPosition: CameraPosition(
             //innital position in map
             target: startLocation, //initial position
-            zoom: 18.0, //initial zoom level
+            zoom: 17.0, //initial zoom level
           ),
           mapType: MapType.normal,
           markers: getmarkers(),
           circles: _circles,
-          onCameraMove: (CameraPosition cameraPosition) {
-            print(cameraPosition.zoom);
-          }, //map type
+          onCameraMove: (CameraPosition cameraPosition) {}, //map type
           onMapCreated: (controller) {
             _controller.complete(controller);
             //method called when map is created
@@ -330,9 +367,8 @@ class _HomeState extends State<Home> {
         ),
 
         _buildGeofenceMonitor(),
-        //Notifications(),
 
-        //search autoconplete input
+        //search autocomplete input
         Positioned(
           //search input bar
           bottom: 0,
@@ -351,75 +387,93 @@ class _HomeState extends State<Home> {
                       style:
                           TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-                    InkWell(
-                        onTap: () async {
-                          var place = await PlacesAutocomplete.show(
-                              context: context,
-                              apiKey: googleApikey,
-                              mode: Mode.overlay,
-                              types: [],
-                              strictbounds: false,
-                              components: [
-                                web.Component(web.Component.country, 'sg')
-                              ],
-                              //google_map_webservice package
-                              onError: (err) {
-                                print(err);
-                              });
+                    Row(
+                      children: [
+                        IconButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) => NavBar()),
+                              );
+                            },
+                            icon: Icon(Icons.menu_sharp)),
+                        InkWell(
+                            onTap: () async {
+                              var place = await PlacesAutocomplete.show(
+                                  //autocomplete function to
+                                  //help the user type out locations
+                                  context: context,
+                                  apiKey: googleApikey,
+                                  mode: Mode.overlay,
+                                  types: [],
+                                  strictbounds: false,
+                                  components: [
+                                    web.Component(web.Component.country, 'sg')
+                                  ],
+                                  //google_map_webservice package
+                                  onError: (err) {});
 
-                          if (place != null) {
-                            setState(() {
-                              location = place.description.toString();
-                            });
+                              if (place != null) {
+                                setState(() {
+                                  location = place.description.toString();
+                                });
 
-                            //form google_maps_webservice package
-                            final plist = web.GoogleMapsPlaces(
-                              apiKey: googleApikey,
-                              apiHeaders: await GoogleApiHeaders().getHeaders(),
-                              //from google_api_headers package
-                            );
-                            String placeid = place.placeId ?? "0";
-                            final detail =
-                                await plist.getDetailsByPlaceId(placeid);
-                            final geometry = detail.result.geometry!;
-                            final lat = geometry.location.lat;
-                            final lang = geometry.location.lng;
-                            var newlatlang = LatLng(lat, lang);
+                                //form google_maps_webservice package
+                                final plist = web.GoogleMapsPlaces(
+                                  apiKey: googleApikey,
+                                  apiHeaders: await const GoogleApiHeaders()
+                                      .getHeaders(),
+                                  //from google_api_headers package
+                                );
+                                String placeid = place.placeId ?? "0";
+                                final detail =
+                                    await plist.getDetailsByPlaceId(placeid);
+                                final geometry = detail.result.geometry!;
+                                final lat = geometry.location.lat;
+                                final lang = geometry.location.lng;
+                                var newlatlang = LatLng(lat, lang);
 
-                            _setMarker(LatLng(
-                                newlatlang.latitude, newlatlang.longitude));
+                                _setMarker(LatLng(
+                                    newlatlang.latitude, newlatlang.longitude));
 
-                            //move map camera to selected place with animation
-                            mapController?.animateCamera(
-                                CameraUpdate.newCameraPosition(CameraPosition(
-                                    target: newlatlang, zoom: 17)));
-                          }
-                        },
-                        child: Padding(
-                          padding: EdgeInsets.all(15),
-                          child: Card(
-                            child: Container(
-                                padding: EdgeInsets.all(0),
-                                width: MediaQuery.of(context).size.width - 40,
-                                child: ListTile(
-                                  title: Text(
-                                    location,
-                                    style: TextStyle(fontSize: 18),
-                                  ),
-                                  trailing: Icon(Icons.search),
-                                  dense: true,
-                                )),
-                          ),
-                        ))
+                                //move map camera to selected place with animation
+                                mapController?.animateCamera(
+                                    CameraUpdate.newCameraPosition(
+                                        CameraPosition(
+                                            target: newlatlang, zoom: 17)));
+                              }
+                            },
+                            //creates a user interface element that displays a card with a location search button,
+                            //allowing the user to search for a location within the app.
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Card(
+                                child: Container(
+                                    padding: const EdgeInsets.all(0),
+                                    width:
+                                        MediaQuery.of(context).size.width - 110,
+                                    child: ListTile(
+                                      title: Text(
+                                        location,
+                                        style: const TextStyle(fontSize: 18),
+                                      ),
+                                      trailing: const Icon(Icons.search),
+                                      dense: true,
+                                    )),
+                              ),
+                            )),
+                      ],
+                    )
                   ],
                 ),
               ),
             ),
           ),
         ),
-        //Notifications(),
-        //alignment: const Alignment(5, 50),
       ]),
+
+      //to display the buttons at the side of the map
       floatingActionButton: Container(
         padding: const EdgeInsets.only(top: 50, right: 0),
         alignment: Alignment.topRight,
@@ -428,21 +482,19 @@ class _HomeState extends State<Home> {
           //use vertical to show  on vertical axis
           children: <Widget>[
             Container(
-                margin: EdgeInsets.all(10),
+                margin: const EdgeInsets.all(10),
                 child: FloatingActionButton(
                   heroTag: "currentLocation",
                   onPressed: () {
+                    //brings the user to the his/her current location when pressed on the button
                     getUserCurrentLocation().then((value) async {
-                      print(value.latitude.toString() +
-                          " " +
-                          value.longitude.toString());
-
                       // specified current users location
-                      CameraPosition cameraPosition = new CameraPosition(
+                      CameraPosition cameraPosition = CameraPosition(
                         target: LatLng(value.latitude, value.longitude),
                         zoom: 18,
                       );
 
+                      //it moves around the camera to user's current location
                       final GoogleMapController controller =
                           await _controller.future;
                       controller.animateCamera(
@@ -451,35 +503,41 @@ class _HomeState extends State<Home> {
                     });
                     //   //action code for button 1
                   },
-                  child: Icon(Icons.my_location),
+                  backgroundColor: Colors.white,
+                  child: const Icon(
+                    Icons.my_location,
+                    color: Colors.black,
+                  ),
                 )), //button first
 
             Container(
-                margin: EdgeInsets.all(10),
+                margin: const EdgeInsets.all(10),
                 child: FloatingActionButton(
                   heroTag: "destination",
                   onPressed: () {
+                    //brings the user to search origin and destination page
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (context) => SearchScreen()),
                     );
                   },
-                  backgroundColor: Colors.deepPurpleAccent,
-                  child: Icon(Icons.add),
+                  backgroundColor: Colors.white,
+                  child: const Icon(
+                    Icons.add,
+                    color: Colors.black,
+                  ),
                 )),
+            //shows the user the speed that they are travelling at
             Container(
-                margin: EdgeInsets.all(10),
+                margin: const EdgeInsets.all(10),
                 child: FloatingActionButton(
                   heroTag: "speed",
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => SpeedometerContainer()),
-                    );
-                  },
-                  backgroundColor: Colors.deepPurpleAccent,
-                  child: Text(velocity.toStringAsFixed(2)),
+                  onPressed: () {},
+                  backgroundColor: Colors.white,
+                  child: Text(
+                    velocity.toStringAsFixed(2),
+                    style: TextStyle(color: Colors.black),
+                  ),
                 )),
           ],
         ),
@@ -487,6 +545,49 @@ class _HomeState extends State<Home> {
     );
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _determinePosition();
+    busStopMarker();
+    _calculateDistance();
+    //just for authorisations
+
+    tz.initializeTimeZones();
+
+    geo.Geolocator.getPositionStream(
+        locationSettings: const geo.LocationSettings(
+      accuracy: geo.LocationAccuracy.bestForNavigation,
+      //distanceFilter: 0,
+    )).listen((Position position) {
+      _onAccelerate(position);
+    });
+    //Registers event listeners for geofence service state changes, such as geofence status changes,
+    //location changes, activity changes,
+    //and stream errors, and starts the geofence service with the specified geofence list.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      geofenceService.addGeofenceStatusChangeListener(_onGeofenceStatusChanged);
+      geofenceService.addLocationChangeListener(_onLocationChanged);
+      geofenceService.addLocationServicesStatusChangeListener(
+          _onLocationServicesStatusChanged);
+      geofenceService.addActivityChangeListener(_onActivityChanged);
+      geofenceService.addStreamErrorListener(_onError);
+      geofenceService.start(_geofenceList).catchError(_onError);
+    });
+  }
+
+  //This will mark the root element and all its child elements as needing to be rebuilt,
+  //which will trigger a rebuild of the entire widget tree.
+  void rebuildAllChildren(BuildContext context) {
+    void rebuild(Element el) {
+      el.markNeedsBuild();
+      el.visitChildren(rebuild);
+    }
+
+    (context as Element).visitChildren(rebuild);
+  }
+
+  //setting the size of the icon marker to be on the map
   Future<Uint8List> getImages(String path, int width) async {
     ByteData data = await rootBundle.load(path);
     ui.Codec codec = await ui.instantiateImageCodec(data.buffer.asUint8List(),
@@ -497,42 +598,53 @@ class _HomeState extends State<Home> {
         .asUint8List();
   }
 
-  BusStopMarker() async {
-    final Uint8List markIcons = await getImages('assets/bus_stop.png', 100);
+  //this is to show the bus stop icon on the map
+  busStopMarker() async {
+    final Uint8List markIcons = await getImages('assets/bus_stop.png', 120);
     // makers added according to index
     markers.add(Marker(
       // given marker id
-      markerId: MarkerId("bus stop timings"),
+      markerId: const MarkerId("Bus stop Timings"),
       // given marker icon
       icon: BitmapDescriptor.fromBytes(markIcons),
       // given position
-      position: LatLng(1.332452, 103.777685),
-      infoWindow: InfoWindow(
+      position: const LatLng(1.33242, 103.77769),
+      infoWindow: const InfoWindow(
         // given title for marker
-        title: 'bus timings',
+        title: 'Bus Timings',
       ),
 
-      onTap: () {},
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (context) =>
+                  const BusStop()), //brings them to a page to show
+          //bus timmings for that location
+        );
+      },
     ));
   }
 
-  Widget _buildContentView() {
+  Widget buildContentView() {
     return ListView(
+      //provides a scroll behavior that "bounces" when the user reaches the end of the list
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.all(8.0),
-      children: [
+      children: const [
         Home(),
       ],
     );
   }
 
-  final _geofenceService = GeofenceService.instance.setup(
+  //it is used to configure various settings related to geofencing
+  final geofenceService = GeofenceService.instance.setup(
       interval: 5000,
-      accuracy: 100,
+      accuracy: 1000,
       loiteringDelayMs: 60000,
       statusChangeDelayMs: 10000,
       useActivityRecognition: true,
-      allowMockLocations: false,
+      allowMockLocations: true,
       printDevLog: false,
       geofenceRadiusSortType: GeofenceRadiusSortType.DESC);
 
@@ -541,21 +653,37 @@ class _HomeState extends State<Home> {
       GeofenceRadius geofenceRadius,
       GeofenceStatus geofenceStatus,
       Location location) async {
+    //it prints the JSON representation of the geofence, geofenceRadius,
+    //and geofenceStatus objects to the console for debugging purposes,
     final geofenceJson = geofence.toJson();
     print('geofence: $geofenceJson');
     print('geofence: ${geofence.toJson()}');
     print('geofence: ${geofence.toString()}');
     print('geofenceRadius: ${geofenceRadius.toJson()}');
     print('geofenceStatus: ${geofenceStatus.toString()}');
+    //geofence object to a StreamController using the sink.add() method
     _geofenceStreamController.sink.add(geofence);
-    if (geofenceJson["id"] == 'blk51') {
-      print("We are at the location!");
-    }
-    if (geofenceJson["id"] == 'clementi_mall') {
-      print("We are not at makan place");
-    }
+    //The StreamController is used to send events to listeners that are
+    //interested in changes to the geofence status.
+
+    // (this to check if the it takes in Json format)
+    // if (geofenceJson["id"] == "blk51") {
+    //   speak("you are entering blk 51");
+    //   NotificationService()
+    //       .showNotification(1, "Location nearby", geofenceJson["id"], 5);
+    // }
+    // if (geofenceJson["id"] == "blk72") {
+    //   speak("you are entering blk 72");
+    //   NotificationService()
+    //       .showNotification(1, "Location nearby", geofenceJson["id"], 5);
+    // }
+
+    // if (geofenceJson["id"] == 'clementi_mall') {
+    //   print("We are not at makan place");
+    // }
   }
 
+  // this function is to be called when the user's activity has changed.
   void _onActivityChanged(Activity prevActivity, Activity currActivity) {
     print('prevActivity: ${prevActivity.toJson()}');
     print('currActivity: ${currActivity.toJson()}');
@@ -573,7 +701,7 @@ class _HomeState extends State<Home> {
     print('isLocationServicesEnabled: $status');
   }
 
-  // This function is used to handle errors that occur in the service.
+  //The purpose of this method is to handle errors that may occur during the execution of the geofencing service.
   void _onError(error) {
     final errorCode = getErrorCodesFromError(error);
     if (errorCode == null) {
@@ -584,74 +712,54 @@ class _HomeState extends State<Home> {
     print('ErrorCode: $errorCode');
   }
 
+  //
   addMarkers(img, location, id) async {
+    // Load marker icon from asset image
     BitmapDescriptor markerbitmap = await BitmapDescriptor.fromAssetImage(
-      ImageConfiguration(),
+      const ImageConfiguration(),
       img,
     );
 
+    // Define a map of waypoint functions, where each key is a waypoint name and the corresponding value is a function that can be called when the waypoint marker is tapped
+    const Map waypointFunction = {
+      "Blk 8": Blk8(),
+      "Blk 23": Blk23(),
+      "Blk 72": Blk72(),
+      "Blk 73": Blk73(),
+      "Blk 51": Blk51(),
+      "SIT": SIT()
+    };
+
+    // Add a new marker to the list of markers
     markers.add(Marker(
-      //add start location marker
+      // Marker ID, must be unique
       markerId: MarkerId(id.toString()),
-      position: location, //position of marker
+      // Marker position, where it will be displayed on the map
+      position: location,
+      // Function called when the marker is tapped
       onTap: () {
-        if (id == 'blk8') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => blk8()));
-          mapController?.animateCamera(CameraUpdate.newCameraPosition(
-              CameraPosition(
-                  target: LatLng(1.334792177762611, 103.77629441346048),
-                  zoom: 17)
-              //17 is new zoom level
-              ));
-        } else if (id == 'blk23') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => blk23()));
-          mapController?.animateCamera(CameraUpdate.newCameraPosition(
-              CameraPosition(target: LatLng(37.4220936, -122.083922), zoom: 17)
-              //17 is new zoom level
-              ));
-        } else if (id == 'blk51') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => blk51()));
-          mapController?.animateCamera(CameraUpdate.newCameraPosition(
-              CameraPosition(target: LatLng(37.4220936, -122.083922), zoom: 17)
-              //17 is new zoom level
-              ));
-        } else if (id == 'blk72') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => blk72()));
-          mapController?.animateCamera(CameraUpdate.newCameraPosition(
-              CameraPosition(
-                  target: LatLng(1.3318895388375338, 103.77571465588211),
-                  zoom: 17)
-              //17 is new zoom level
-              ));
-        } else if (id == 'blk73') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => blk73()));
-          mapController?.animateCamera(CameraUpdate.newCameraPosition(
-              CameraPosition(
-                  target: LatLng(1.3320323222018304, 103.77649335992052),
-                  zoom: 17)
-              //17 is new zoom level
-              ));
-        } else if (id == 'sit') {
-          Navigator.push(
-              context, MaterialPageRoute(builder: (context) => sit()));
-          mapController?.animateCamera(CameraUpdate.newCameraPosition(
-              CameraPosition(
-                  target: LatLng(1.3342380695589044, 103.7744542762125),
-                  zoom: 17)
-              //17 is new zoom level
-              ));
+        // Loop through the list of waypoint data and find the waypoint with the matching name
+        for (int i = 0; i < waypointData.length; i++) {
+          if (id == waypointData[i]["Name"]) {
+            // Navigate to the waypoint screen using the function from the map
+            Navigator.push(context,
+                MaterialPageRoute(builder: (context) => waypointFunction[id]));
+            // Animate the camera to focus on the waypoint
+            mapController?.animateCamera(CameraUpdate.newCameraPosition(
+                CameraPosition(
+                    target: LatLng(waypointData[i]["Latitude"],
+                        waypointData[i]["Longitude"]),
+                    zoom: 17)));
+          }
         }
       },
-      icon: markerbitmap, //Icon for Marker
+      // Marker icon
+      icon: markerbitmap,
     ));
   }
 
   @override
+  // This method is used to dispose of the stream controllers once they are no longer needed
   void dispose() {
     _activityStreamController.close();
     _geofenceStreamController.close();
@@ -659,12 +767,14 @@ class _HomeState extends State<Home> {
   }
 
   Widget _buildGeofenceMonitor() {
+    interval++;
+    // This widget uses a StreamBuilder to listen for updates to the geofence stream
     return StreamBuilder<Geofence>(
       stream: _geofenceStreamController.stream,
       builder: (context, snapshot) {
         // final updatedDateTime = DateTime.now();
         final content = snapshot.data?.toJson();
-        // ignore: unnecessary_null_comparison
+        // If the content of the snapshot is null, display an empty column widget
         if (content == null) {
           @override
           const content = '';
@@ -678,112 +788,68 @@ class _HomeState extends State<Home> {
             ],
           );
         } else {
-          String location = "";
-          if (content['id'] == 'blk51') {
-            location = "We are at the location.";
-            text = 'You are inside the geofenced area: Block 51';
-            NotificationService()
-                .showNotification(1, "GeoFenced Area", "BLock 51", 5);
-            speak();
-            return Container(
-                padding: const EdgeInsets.only(top: 263, right: 15),
-                alignment: Alignment.topRight,
-                margin: EdgeInsets.all(10),
-                child: FloatingActionButton(
-                  heroTag: "blk51",
-                  onPressed: () {},
-                  backgroundColor: Colors.redAccent,
-                  child: Icon(Icons.warning_amber),
-                ));
-          }
+          for (int i = 0; i < 6; i++) {
+            _getRisk();
+            var backgroundColor = Colors.grey;
+            distanceInMeter = Geolocator.distanceBetween(
+                //using goelocator package to track whether
+                //are they near one of the locations
+                _currentUserPosition!.latitude,
+                _currentUserPosition!.longitude,
+                _geofenceList[i].latitude,
+                _geofenceList[i].longitude);
+            if (distanceInMeter! <= 100 && distanceInMeter! > 25) {
+              //sends them a notification when they are 100m away from the location
+              NotificationService().showNotification(
+                  1, "You are 100m away", _geofenceList[i].id, 5);
+            } else if (distanceInMeter! <= 25) {
+              //sends them a notification and a voice alert when they are less than 25m away
+              NotificationService().showNotification(
+                  2, "You are nearby", _geofenceList[i].id, 5);
 
-          if (content['id'] == 'blk8') {
-            location = "We are at the location.";
-            text = 'You are inside the geofenced area: Block 8';
-            NotificationService()
-                .showNotification(1, "GeoFenced Area", "BLock 8", 5);
-            speak();
-            return Container(
-                padding: const EdgeInsets.only(top: 263, right: 15),
-                alignment: Alignment.topRight,
-                margin: EdgeInsets.all(10),
-                child: FloatingActionButton(
-                  heroTag: "blk8",
-                  onPressed: () {},
-                  backgroundColor: Colors.redAccent,
-                  child: Icon(Icons.warning_amber),
-                ));
-          }
+              //assigns the variables; color and texts accordingly to the risks
+              riskData.forEach((key, value) {
+                if (_geofenceList[i].id == key) {
+                  if (value >= 1 && value <= 3) {
+                    text = 'You are entering a low risk zone';
+                    backgroundColor = Colors.green;
+                  } else if (value >= 4 && value <= 7) {
+                    text = 'You are entering a medium risk zone';
+                    backgroundColor = Colors.orange;
+                  } else if (value >= 8 && value <= 10) {
+                    text = 'You are entering a high risk zone';
+                    backgroundColor = Colors.red;
+                  } else {
+                    backgroundColor = Colors.grey;
+                  }
+                }
+              });
+            }
 
-          if (content['id'] == 'blk72') {
-            location = "We are at the location.";
-            text = 'You are inside the geofenced area: Block 72';
-            NotificationService()
-                .showNotification(1, "GeoFenced Area", "BLock 72", 5);
-            speak();
-            return Container(
-                padding: const EdgeInsets.only(top: 263, right: 15),
-                alignment: Alignment.topRight,
-                margin: EdgeInsets.all(10),
-                child: FloatingActionButton(
-                  heroTag: "blk72",
-                  onPressed: () {},
-                  backgroundColor: Colors.redAccent,
-                  child: Icon(Icons.warning_amber),
-                ));
-          }
+            //the geofencing continuosly runs to check their location and assigns them the text messages
+            //hence the voice alerts overlap. therefore, need to set intervals inbetween to make them sound smoother
+            if (interval > 30) {
+              speak();
+              print("spoken");
+              if (velocity > 1) {
+                text = 'Slow down. You are going very fast';
+                speak();
+                print('spoken');
+                _appendSpeed();
+              }
+              interval = 0;
+            }
 
-          if (content['id'] == 'blk73') {
-            location = "We are at the location.";
-            text = 'You are inside the geofenced area: Block 73';
-            NotificationService()
-                .showNotification(1, "GeoFenced Area", "BLock 73", 5);
-            speak();
+            // this is the warning icon to show the user when they entering the zones
             return Container(
                 padding: const EdgeInsets.only(top: 263, right: 15),
                 alignment: Alignment.topRight,
-                margin: EdgeInsets.all(10),
+                margin: const EdgeInsets.all(10),
                 child: FloatingActionButton(
-                  heroTag: "blk73",
+                  heroTag: content['id'],
                   onPressed: () {},
-                  backgroundColor: Colors.redAccent,
-                  child: Icon(Icons.warning_amber),
-                ));
-          }
-
-          if (content['id'] == 'sit') {
-            location = "We are at the location.";
-            text = 'You are inside the geofenced area: sit';
-            NotificationService()
-                .showNotification(1, "GeoFenced Area", "sit", 5);
-            speak();
-            return Container(
-                padding: const EdgeInsets.only(top: 263, right: 15),
-                alignment: Alignment.topRight,
-                margin: EdgeInsets.all(10),
-                child: FloatingActionButton(
-                  heroTag: "sit",
-                  onPressed: () {},
-                  backgroundColor: Colors.redAccent,
-                  child: Icon(Icons.warning_amber),
-                ));
-          }
-
-          if (content['id'] == 'blk23') {
-            location = "We are at the location.";
-            text = 'You are inside the geofenced area: Block 23';
-            NotificationService()
-                .showNotification(1, "GeoFenced Area", "BLock 23", 5);
-            speak();
-            return Container(
-                padding: const EdgeInsets.only(top: 263, right: 15),
-                alignment: Alignment.topRight,
-                margin: EdgeInsets.all(10),
-                child: FloatingActionButton(
-                  heroTag: "blk23",
-                  onPressed: () {},
-                  backgroundColor: Colors.redAccent,
-                  child: Icon(Icons.warning_amber),
+                  backgroundColor: backgroundColor,
+                  child: const Icon(Icons.warning_amber),
                 ));
           }
         }
@@ -792,86 +858,53 @@ class _HomeState extends State<Home> {
     );
   }
 
-  Widget _buildActivityMonitor() {
-    return StreamBuilder<Activity>(
-      stream: _activityStreamController.stream,
-      builder: (context, snapshot) {
-        final updatedDateTime = DateTime.now();
-        final content = snapshot.data?.toJson().toString() ?? '';
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            //Text('•\t\tActivity (updated: $updatedDateTime)'),
-            const SizedBox(height: 50.0),
-            Text(content),
-          ],
-        );
-      },
-    );
-  }
-
+  // This loop iterates over the waypoints and compares the names to the risk data.
   Set<Marker> getmarkers() {
     _getWaypoint();
     _getRisk();
-    var risknum = {
-      _getGeofence()[0].id.toString(): riskData["Blk 51"].toString(),
-      _getGeofence()[1].id.toString(): riskData["Blk 72"].toString(),
-      _getGeofence()[2].id.toString(): riskData["Blk 73"].toString(),
-      _getGeofence()[3].id.toString(): riskData["Blk 23"].toString(),
-      _getGeofence()[4].id.toString(): riskData["Blk 8"].toString(),
-      _getGeofence()[5].id.toString(): riskData["SIT"].toString(),
-    };
+    //_calculateDistance();
+    Map risk = riskData;
 
     //markers to place on map
     setState(() {
-      for (int i = 0; i < 6; i++) {
-        if (risknum[_getGeofence()[i].id.toString()] == '1') {
-          addMarkers(
-              'assets/greenCamera.png',
-              LatLng(_getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              _getGeofence()[i].id.toString());
-
-          _circles.add(Circle(
-              circleId: CircleId(_getGeofence()[i].id.toString()),
-              center: LatLng(
-                  _getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              radius: 25,
-              fillColor: Colors.greenAccent.withOpacity(0.5),
-              strokeWidth: 3,
-              strokeColor: Colors.greenAccent));
-        } else if (risknum[_getGeofence()[i].id.toString()] == '2') {
-          addMarkers(
-              'assets/orangeCamera.png',
-              LatLng(_getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              _getGeofence()[i].id.toString());
-
-          _circles.add(Circle(
-              circleId: CircleId(_getGeofence()[i].id.toString()),
-              center: LatLng(
-                  _getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              radius: 25,
-              fillColor: Colors.orangeAccent.withOpacity(0.5),
-              strokeWidth: 3,
-              strokeColor: Colors.orangeAccent));
-        } else if (risknum[_getGeofence()[i].id.toString()] == '3') {
-          addMarkers(
-              'assets/redCamera.png',
-              LatLng(_getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              _getGeofence()[i].id.toString());
-
-          _circles.add(Circle(
-              circleId: CircleId(_getGeofence()[i].id.toString()),
-              center: LatLng(
-                  _getGeofence()[i].latitude, _getGeofence()[i].longitude),
-              radius: 25,
-              fillColor: Colors.redAccent.withOpacity(0.5),
-              strokeWidth: 3,
-              strokeColor: Colors.redAccent));
-        }
+      for (int i = 0; i < waypointData.length; i++) {
+        risk.forEach((key, value) {
+          if (waypointData[i]["Name"] == key) {
+            // This block sets the color and image for the marker based on the risk value.
+            String assets = 'assets/greenSmile.png';
+            Color fillColor = Colors.blueGrey.withOpacity(0.5);
+            Color strokeColor = Colors.blueGrey;
+            if (value >= 1 && value <= 3) {
+              fillColor = Colors.greenAccent.withOpacity(0.5);
+              strokeColor = Colors.greenAccent;
+              assets = 'assets/greenSmile.png';
+            } else if (value >= 4 && value <= 7) {
+              fillColor = Colors.orangeAccent.withOpacity(0.5);
+              strokeColor = Colors.orangeAccent;
+              assets = 'assets/orangeSmile.png';
+            } else if (value >= 8 && value <= 10) {
+              fillColor = Colors.redAccent.withOpacity(0.5);
+              strokeColor = Colors.redAccent;
+              assets = 'assets/redSmile.png';
+            }
+            // This adds the marker to the map using the marker image and location.
+            addMarkers(
+                assets,
+                LatLng(
+                    waypointData[i]["Latitude"], waypointData[i]["Longitude"]),
+                key);
+            // This adds a circle to the map around the marker to indicate the risk level.
+            _circles.add(Circle(
+                circleId: CircleId(_getGeofence()[i].id),
+                center: LatLng(
+                    waypointData[i]["Latitude"], waypointData[i]["Longitude"]),
+                radius: 25,
+                fillColor: fillColor,
+                strokeWidth: 3,
+                strokeColor: strokeColor));
+          }
+        });
       }
-
-      //add more markers here
     });
 
     return markers;
